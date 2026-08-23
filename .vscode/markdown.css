@@ -1,0 +1,232 @@
+/* ========================================
+   VS Code Markdown Preview
+   GitHub Light風
+   ======================================== */
+
+body.vscode-body {
+  background: #ffffff !important;
+  color: #1f2328 !important;
+
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Helvetica,
+    Arial,
+    sans-serif;
+
+  font-size: 16px;
+  line-height: 1.5;
+
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 45px;
+}
+
+/*
+ * VS Code本体がDark Themeでも
+ * Markdown Preview内ではLight系カラーを使わせる
+ */
+body.vscode-dark,
+body.vscode-high-contrast {
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #1f2328;
+
+  --vscode-textBlockQuote-background: #f6f8fa;
+  --vscode-textBlockQuote-border: #d0d7de;
+
+  --vscode-textCodeBlock-background: #f6f8fa;
+
+  --vscode-descriptionForeground: #656d76;
+  --vscode-editorWidget-border: #d0d7de;
+  --vscode-panel-border: #d0d7de;
+}
+
+
+/* ====================
+   見出し
+   ==================== */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: #1f2328 !important;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+h1,
+h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #d8dee4 !important;
+}
+
+
+/* ====================
+   本文
+   ==================== */
+
+p,
+li {
+  color: #1f2328;
+}
+
+a {
+  color: #0969da !important;
+}
+
+
+/* ====================
+   引用
+   ==================== */
+
+blockquote {
+  background: #ffffff !important;
+  color: #656d76 !important;
+
+  margin: 0;
+  padding: 0 1em;
+
+  border-left: 4px solid #d0d7de !important;
+}
+
+
+/* ====================
+   コード
+   ==================== */
+
+code {
+  color: #1f2328 !important;
+  background: rgba(175, 184, 193, 0.2) !important;
+
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  font-size: 85%;
+}
+
+pre {
+  background: #f6f8fa !important;
+  color: #1f2328 !important;
+
+  padding: 16px;
+  border-radius: 6px;
+
+  overflow: auto;
+}
+
+pre code {
+  background: transparent !important;
+  padding: 0;
+}
+
+
+/* ====================
+   Table
+   ==================== */
+
+table {
+  border-spacing: 0;
+  border-collapse: collapse;
+}
+
+table th,
+table td {
+  padding: 6px 13px;
+
+  border: 1px solid #d0d7de !important;
+  color: #1f2328 !important;
+}
+
+table th {
+  font-weight: 600;
+  background: #ffffff !important;
+}
+
+table tr {
+  background: #ffffff !important;
+  border-top: 1px solid #d0d7de !important;
+}
+
+table tr:nth-child(2n) {
+  background: #f6f8fa !important;
+}
+
+
+/* ====================
+   区切り線
+   ==================== */
+
+hr {
+  height: 4px;
+  padding: 0;
+  margin: 24px 0;
+
+  background: #d8dee4 !important;
+  border: 0;
+}
+
+
+/* ====================
+   Mermaid
+   ==================== */
+
+.mermaid {
+  background: #ffffff !important;
+}
+
+.mermaid svg {
+  background: #ffffff !important;
+}
+
+/* ノード */
+.mermaid .node rect,
+.mermaid .node circle,
+.mermaid .node ellipse,
+.mermaid .node polygon,
+.mermaid .node path {
+  fill: #f6f8fa !important;
+  stroke: #57606a !important;
+}
+
+/* 接続線 */
+.mermaid .edgePath path,
+.mermaid .flowchart-link,
+.mermaid .relationshipLine {
+  stroke: #57606a !important;
+}
+
+/* 矢印 */
+.mermaid marker path {
+  fill: #57606a !important;
+  stroke: #57606a !important;
+}
+
+/* Mermaid文字 */
+.mermaid text,
+.mermaid .label,
+.mermaid .nodeLabel,
+.mermaid .edgeLabel {
+  color: #1f2328 !important;
+  fill: #1f2328 !important;
+}
+
+.mermaid .edgeLabel {
+  background: #ffffff !important;
+}
+
+.mermaid .edgeLabel rect {
+  fill: #ffffff !important;
+  opacity: 1 !important;
+}
+
+
+/* ====================
+   Image
+   ==================== */
+
+img {
+  max-width: 100%;
+}
