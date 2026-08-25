@@ -1,771 +1,346 @@
 # オンラインボードゲームプラットフォーム
 
-## 要件定義書
-
-**MVP / Android・iOSクロスプラットフォーム / AIエージェント開発基盤**
+## 要件定義書 v0.2（クロスプラットフォーム再構成）
 
 | 項目 | 内容 |
 | --- | --- |
-| 文書バージョン | 0.2（ドラフト） |
-| 作成日 | 2026-08-23 |
-| 対象 | Android / iOS対応の2〜4人用オンラインボードゲームプラットフォーム |
-| 想定技術 | React Native / Expo / Expo Router / TypeScript / Supabase / GitHub / Codex / EAS |
-| 文書目的 | MVPの開発範囲、Android/iOS両対応を維持する設計原則、将来的なボードゲーム量産基盤およびAIエージェント開発基盤の要件を定義する |
+| 文書バージョン | 0.2（再構成） |
+| 作成日 | 2026-08-25 |
+| 対象 | Android ネイティブアプリ、iOS ネイティブアプリ、PC・モバイルのWebブラウザ |
+| 想定技術 | Expo / React Native / React Native Web / Expo Router / TypeScript / Supabase / GitHub / EAS |
+| 文書目的 | 1つのゲーム基盤で、Android・iOS・Web間のオンライン対戦を成立させるための要件と構成を定義する。 |
 
-# 0. 文書の位置づけ
+## 0. 結論と設計方針
 
-本書は、スマートフォン上で複数種類のボードゲームをオンライン対戦できるプラットフォームについて、初期開発（MVP）に必要な要件と、将来的に生成AI／Codexを用いてゲームを継続追加するための開発基盤要件を定義する。
+本プラットフォームは、Android・iOS・Webを別製品として実装しない。Expoを基盤とした**ユニバーサルクライアント**を1つ持ち、React Native Webによって同じ画面・ゲームロジック・通信契約をブラウザでも利用する。
 
-本プロジェクトでは、**Android向けアプリを完成させた後にiOSへ移植する方式を採用しない**。初期段階からAndroid / iOSの双方を対象とする単一コードベースとして設計・実装し、MVP開発中も両OSでビルド可能な状態を維持する。
+Webは管理画面や閲覧専用ではなく、ネイティブアプリと同じルームへ参加し、同じゲームを最後まで対戦できる正式なクライアントとする。例えば、Android・iOS・PCブラウザの3人が1つのルームで対戦できなければならない。
 
-> 本書は「何を満たすべきか」を定める要件定義書であり、画面遷移の全詳細、API仕様、DBの全カラム、Game DSLの文法などは後続の基本設計・詳細設計で定義する。
+ゲームの正しい状態はサーバーだけが確定する。クライアントはゲーム操作を要求し、サーバーが参加資格、手番、行動の妥当性、状態バージョンを検証してから状態を更新する。Realtime通信は画面更新を速める通知経路であり、正しいゲーム状態の唯一の根拠にはしない。
 
-## 0.1 要件の区分
+### 0.1 設計原則
 
-| 区分 | 意味 |
-| --- | --- |
-| 確定 | 現時点で実現対象として扱う要件 |
-| 推奨 | 現時点の技術・運用上、採用を推奨する設計方針 |
-| 未決 | 実装開始前またはMVP検証後に決定する事項 |
+- クライアント、ゲームエンジン、通信契約はAndroid・iOS・Webで共通化する。
+- OS／ブラウザ固有の機能はPlatform Adapterの内側へ隔離する。
+- ルール、勝敗判定、乱数の扱い、状態遷移、権限判定をUIへ置かない。
+- 全クライアントが同じゲームセッションID、状態バージョン、アクション形式を使用する。
+- マウス、キーボード、タッチのいずれでも主要なゲーム操作を実行できるようにする。
+- Web版はインストールを前提とせず、共有URLから参加できるようにする。PWA化はMVPの必須条件にしない。
 
-## 0.2 優先度
+### 0.2 優先度
 
 | 優先度 | 意味 |
 | --- | --- |
-| Must | MVP成立・将来拡張性の確保に必須 |
-| Should | MVPで可能な限り実装する |
-| Could | MVP後に追加可能 |
+| Must | MVPのクロスプラットフォーム対戦に必須 |
+| Should | MVPで可能な限り満たす |
+| Could | MVP完了後に追加する |
 
-# 1. 背景・目的
+## 1. 対象範囲
 
-生成AIを利用すると、ゲームの企画、ルール案、カードやパラメータ、実装、テストコード等を高速に生成できる。一方、ゲームごとに独立したアプリを作成すると、オンライン通信、アカウント、募集、ストア審査、運用を毎回構築する必要があり、量産性が低い。
+### 1.1 MVPで実現すること
 
-そこで、共通のモバイルアプリ／バックエンド／ゲームエンジンを持つプラットフォームを先に構築し、新しいゲームを「共通仕様に従ったゲーム定義」として継続的に追加できる状態を目指す。
+- 2〜4人が、Androidアプリ、iOSアプリ、またはWebブラウザから同一ルームに参加できる。
+- 異なるプラットフォームの参加者を含むゲームを、開始から終了まで進行できる。
+- ユーザー認証、ゲーム選択、募集・招待、ルーム参加、ゲーム進行、結果表示をすべてのクライアントで利用できる。
+- 共有URLからWeb版の該当ルームまたは招待画面を開ける。ネイティブアプリがインストール済みの場合はUniversal Link / App Linkによる起動を許容する。
+- 通信切断、アプリのバックグラウンド化、ブラウザタブの休止後に、権威ある状態を再取得して対局へ復帰できる。
+- 少なくとも2種類のゲームを、共通のゲームエンジンとゲーム定義を利用して提供する。
 
-また、スマートフォン向けサービスとしてAndroid / iOSの双方を対象とし、特定OS固有の実装に依存して後から移植が困難になることを防ぐ。
+### 1.2 MVPの対象外
 
-## 1.1 プロダクト目標
+- オフライン対戦、Bluetooth／LAN対戦、完全なオフラインゲーム。
+- Web版のネイティブアプリと同等のPush通知。
+- App Store / Google Play Games / Game Centerとの高度な連携。
+- ユーザー制作ゲームの即時公開、任意コードの配信、課金、ランキング、観戦、ボイスチャット。
+- Internet Explorerを含むサポート終了ブラウザへの対応。
 
-- 2〜4人がインターネット越しにスマートフォンからボードゲームを遊べる。
-- Android / iOSの双方で利用できる。
-- 1つのアプリ内で複数のボードゲームを選択して遊べる。
-- ユーザーがアプリ内で一緒に遊ぶ相手を募集できる。
-- 新しいゲームを既存の共通基盤へ低コストで追加できる。
-- ゲーム固有ロジックをOSやUIから分離し、自動テスト・シミュレーションできる。
-- 将来的にCodex等のAIエージェントが、ゲーム生成・実装・テスト・PR作成まで一貫して行える。
+## 2. 成功条件
 
-## 1.2 成功指標（MVP）
-
-| ID | 指標 | 目標 |
+| ID | 指標 | MVPの達成条件 |
 | --- | --- | --- |
-| KPI-01 | オンライン対戦成立 | 2〜4人が同一ルームへ参加し、最後まで1ゲーム完了できる |
-| KPI-02 | クロスプラットフォーム | Android / iOSの双方で主要MVPフローが動作する |
-| KPI-03 | 複数ゲーム対応 | 同一アプリ上で最低2種類のゲームが共通基盤を利用して動作する |
-| KPI-04 | ゲーム追加性 | 既存の認証・募集・ルーム機能を変更せずに3本目を追加できる |
-| KPI-05 | 再現可能な開発環境 | Git clone後、文書化されたコマンドでアプリ・ローカルSupabase・テストを起動できる |
-| KPI-06 | Agent開発 | Codexがリポジトリの規約に従って変更・テスト・差分提示を行える |
-| KPI-07 | OS非依存性 | Game Engine / Game LogicにAndroid/iOS固有APIへの直接依存がない |
+| KPI-01 | 混在対戦 | Android、iOS、Webのうち任意の2〜4クライアントが同一ルームで1ゲーム完了できる。 |
+| KPI-02 | 共通性 | ゲームルール、アクション形式、状態同期プロトコルをクライアント別に複製しない。 |
+| KPI-03 | 参加容易性 | Webの招待URLを開いて認証・参加・対戦開始まで到達できる。 |
+| KPI-04 | 復帰性 | 一時切断後、古いローカル状態を採用せずサーバーの状態へ同期して復帰できる。 |
+| KPI-05 | 追加性 | 2本目のゲームを、認証・ルーム・Realtime・各プラットフォーム用画面を作り直さず追加できる。 |
 
-# 2. 対象範囲
+## 3. サポート対象と利用体験
 
-## 2.1 MVPに含める範囲
+### 3.1 サポート対象
 
-- React Native / ExpoによるAndroid / iOS共通モバイルアプリ。
-- Android / iOS双方のDevelopment Build。
-- Android / iOS双方での主要フロー動作確認。
-- ユーザー認証・プロフィールの最小機能。
-- ゲーム一覧・ゲーム詳細・ルール表示。
-- 募集掲示板、募集への参加、対戦ルーム。
-- 2〜4人のリアルタイム／ターン制オンライン対戦。
-- ゲーム状態のサーバー側検証と同期。
-- 最低2種類のゲーム。
-- 通報・ブロック・最低限のモデレーション導線。
-- 管理者向けの最低限の運用機能。
-- GitHub中心の開発、CI、自動テスト、Supabase migration管理。
-- Android / iOS双方のビルド可否を継続確認するCI/CD。
-- Expo Goに依存しないDevelopment Build中心の開発環境。
-
-## 2.2 MVP外（将来候補）
-
-- Android / iOS両ストアでの同日一般公開。
-- 課金、サブスクリプション、広告。
-- 音声通話、ビデオ通話。
-- ランキング、レーティング、トーナメント。
-- フレンド／フォローの高度なSNS機能。
-- Game Center / Google Play Gamesとの高度な統合。
-- AIが完全自動で本番公開する仕組み。
-- AI Game Factoryによる大量自動生成・自動バランス調整。
-
-> 公開時期はAndroid / iOSで異なってもよい。ただし、MVP開発中から両OSでビルド・動作確認可能な状態を維持し、「後からiOSへ移植する」状態を作らない。
-
-# 3. 想定ユーザーと主要ユースケース
-
-| ユーザー | 目的 | 主な行動 |
+| 区分 | Mustの対象 | 補足 |
 | --- | --- | --- |
-| 一般プレイヤー | オンラインで気軽に遊ぶ | ログイン、ゲーム選択、募集検索、参加、対戦、チャット、通報 |
-| 募集者／ルームホスト | 一緒に遊ぶ人を集める | 募集作成、参加者確認、開始、ルーム管理 |
-| 運営者 | サービスを安全に維持する | ゲーム公開管理、通報確認、ユーザー／投稿対応、障害確認 |
-| 開発者／AI Agent | ゲーム・機能を継続追加する | コード変更、migration、テスト、PR、Preview確認 |
+| Androidアプリ | Android 10以降 | Expo Development Buildおよび配布ビルドで検証する。 |
+| iOSアプリ | iOS 16以降 | 実機またはSimulatorで検証する。 |
+| モバイルWeb | Android Chrome、iOS Safariの現行版と直前の主要版 | アプリ未導入でも対戦できる。 |
+| デスクトップWeb | Chrome、Safari、Edgeの現行版と直前の主要版 | マウス・キーボードによる操作を含む。 |
 
-# 4. システム全体構成
+サポートOS・ブラウザの最低バージョンは、リリースごとに利用状況とExpoのサポート状況を確認して見直す。Webの互換性はUser-Agentによる無条件な拒否ではなく、必要な機能の検出と分かりやすい案内を基本とする。
 
-推奨構成は、モバイルアプリ、Supabaseバックエンド、ゲームエンジン／Game Definition、Platform Adapter、管理Web、GitHub／CI/CDの6領域からなる。
+### 3.2 共通の画面・操作要件
 
-| 領域 | 推奨技術 | 役割 |
+| ID | 要件 | 優先度 |
 | --- | --- | --- |
-| Mobile App | React Native + Expo + Expo Router + TypeScript | ゲーム一覧、募集、ルーム、ゲームUI、チャット |
-| Backend | Supabase | Auth、PostgreSQL、Realtime、Storage、Edge Functions |
-| Game Platform | TypeScript package + Game Definition | ターン、カード、山札、得点、勝敗、公開／非公開情報等の共通処理 |
-| Platform Adapter | TypeScript interface + OS別実装 | Push、認証、課金、ストレージ、Deep Link等のOS差分吸収 |
-| Admin | Next.js（推奨） | ゲーム公開、通報・ユーザー管理、運用確認 |
-| Dev / CI | GitHub + Codex + GitHub Actions + EAS | コード正本、AI開発、自動テスト、Android/iOSビルド・配布 |
+| UX-01 | 認証、ロビー、ゲーム一覧、ルーム、対局、結果の情報構造と用語を3クライアントで共通にする。 | Must |
+| UX-02 | 画面幅に応じて、モバイルでは縦長・タッチ中心、デスクトップでは盤面と情報パネルを並列表示できる。 | Must |
+| UX-03 | 盤面上の操作には、タップ／クリックと同等の代替操作を用意する。ホバーだけ、ドラッグだけに依存しない。 | Must |
+| UX-04 | Webではキーボード操作、フォーカス順、可視フォーカス、読み上げ用ラベルを提供する。 | Must |
+| UX-05 | 盤面・カード・手札は画面密度に依存しない論理座標とレイアウト規則で描画する。 | Must |
+| UX-06 | 小画面で横幅が不足する場合は、情報パネルの折り畳み、盤面の縮小、横向き案内の順に対応する。重要な操作を画面外へ隠さない。 | Should |
+| UX-07 | 入力中・送信中・再同期中・相手待ち・終了の状態を明示する。 | Must |
 
-## 4.1 論理構成
+## 4. 機能要件
+
+### 4.1 アカウントと招待
+
+| ID | 要件 | 優先度 |
+| --- | --- | --- |
+| FR-01 | メールOTPまたはMagic Linkを、Android、iOS、Webで利用できる。 | Must |
+| FR-02 | 認証完了後、招待URLが示すルームへ安全に復帰する。WebとネイティブのリダイレクトURLを環境別に登録する。 | Must |
+| FR-03 | 招待URLは推測困難なトークンを用い、参加資格・有効期限・使用回数をサーバーで判定する。 | Must |
+| FR-04 | ルーム参加者以外は、対局の非公開情報およびRealtimeチャンネルを閲覧できない。 | Must |
+| FR-05 | アカウント削除とログアウトをすべてのクライアントから実行できる。 | Must |
+
+### 4.2 ルームとゲーム進行
+
+| ID | 要件 | 優先度 |
+| --- | --- | --- |
+| FR-10 | ユーザーはゲームを選び、人数上限を指定したルームを作成できる。 | Must |
+| FR-11 | ユーザーは公開募集または招待URLでルームへ参加・退出できる。 | Must |
+| FR-12 | 参加者が必要人数を満たした後、ルーム所有者または定義された条件で対局を開始できる。 | Must |
+| FR-13 | クライアントは`GameAction`を送信するが、ゲーム状態を直接更新できない。 | Must |
+| FR-14 | サーバーは認証、ルーム所属、手番、ゲームバージョン、アクション形式、状態バージョンを検証してから状態を更新する。 | Must |
+| FR-15 | 不正または競合したアクションは拒否し、クライアントへ最新状態と理由コードを返す。 | Must |
+| FR-16 | 各クライアントはRealtime通知受信時および復帰時に、必要に応じて最新スナップショットを取得して表示を更新する。 | Must |
+| FR-17 | 秘匿情報は参加者の役割に応じて投影する。クライアントへ他プレイヤーの手札・未公開情報を送信しない。 | Must |
+
+### 4.3 接続・復帰
+
+| ID | 要件 | 優先度 |
+| --- | --- | --- |
+| FR-20 | アプリのforeground / background / resume、ブラウザのonline / offline / visibilitychangeを検知して接続状態を表示する。 | Must |
+| FR-21 | 再接続時は、最後に受け取った状態バージョンを基に差分またはスナップショットを取得する。 | Must |
+| FR-22 | アクション送信にはクライアント生成の一意な`action_id`を付与し、再送しても二重適用されない。 | Must |
+| FR-23 | タブ休止・ネットワーク変更・アプリ再起動後でも、サーバー確定済みの結果を再現できる。 | Must |
+
+## 5. アーキテクチャ
+
+### 5.1 全体構成
 
 ```text
-                         ┌────────────────────┐
-                         │   Mobile App       │
-                         │ React Native/Expo  │
-                         └─────────┬──────────┘
-                                   │
-                 ┌─────────────────┼─────────────────┐
-                 │                 │                 │
-          ┌──────▼──────┐   ┌──────▼──────┐   ┌────▼─────┐
-          │ Shared UI   │   │ Game Engine │   │ Platform │
-          │ / Features  │   │ / Game Logic│   │ Adapter  │
-          └──────┬──────┘   └──────┬──────┘   └────┬─────┘
-                 │                 │                 │
-                 └─────────────────┼─────────────────┘
-                                   │
-                         ┌─────────▼──────────┐
-                         │     Supabase       │
-                         │ Auth / DB / RT /   │
-                         │ Storage / Function │
-                         └────────────────────┘
-
-                       Android       iOS
-                          ▲           ▲
-                          └──── Expo ─┘
+Android App ─┐
+iOS App ────┼─ Universal Client（Expo / React Native / Expo Router）
+Web Browser ┘                    │
+                                 │ HTTPS / WSS
+                                 ▼
+                     Supabase Auth / PostgreSQL / Realtime
+                                 │
+                                 ▼
+            Edge Function + DB Transaction / RPC（サーバー権威）
+                                 │
+                                 ▼
+                 Game Engine / Game Definitions（TypeScript）
 ```
 
-## 4.2 リポジトリ構成（推奨）
+Expo RouterはAndroid・iOS・Webで共通のファイルベースルーティングとディープリンクを提供する。Webは`expo export --platform web`で静的成果物として出力し、CDN／静的ホスティングへ配置する。ホスティングはEAS Hostingを第一候補とするが、Web成果物と環境変数の契約を守る限り別の静的ホスティングへ置き換え可能とする。
+
+### 5.2 責務分割
+
+| 層 | 主な責務 | 禁止事項 |
+| --- | --- | --- |
+| Universal UI | 画面、レスポンシブ表示、入力、表示用状態 | 勝敗や手番の最終判定、直接DB更新 |
+| Application | 認証、ルーム、同期、再接続、ユースケース | OS固有APIへの直接依存 |
+| Game Engine | 状態遷移、合法手、勝敗、乱数シード、シミュレーション | React、Expo、DOM、Supabaseへの依存 |
+| Game Definition | ゲーム固有の初期状態、ルール、表示メタデータ | クライアント別ルール実装 |
+| Server Authority | 認可、アクション検証、永続化、競合制御、状態投影 | クライアントの自己申告を無検証で採用 |
+| Platform Adapter | secure storage、URL起動、共有、通知、ブラウザ差分 | ゲームルールの実装 |
+
+### 5.3 サーバー権威と同期方式
+
+1. クライアントは、`session_id`、`action_id`、想定`state_version`を含むアクション要求を送る。
+2. Edge Functionまたは同等のサーバー入口はJWTを検証し、DBトランザクション／RPC内で参加資格とアクションを検証する。
+3. Game Engineで次状態を算出し、スナップショット、アクション履歴、状態バージョンを原子的に更新する。
+4. コミット後に、参加者のみが購読できるprivate Realtimeチャンネルへ更新通知を発行する。
+5. 通知を受けたクライアントは、バージョン差分または役割別スナップショットを取得して表示する。
+
+`game_actions`、確定済みの状態、結果をクライアントから直接書き込ませない。SupabaseのRLSで読み取り範囲を制限し、Realtime Broadcast / Presenceはprivate channelと認可ポリシーを必須とする。Postgres Changesは小規模な補助用途に限定し、ゲーム進行の主通知には利用しない。
+
+### 5.4 データの最小構成
+
+| データ | 用途 |
+| --- | --- |
+| `profiles` | 表示名などの公開プロフィール |
+| `rooms` / `room_members` | 募集、参加資格、役割、招待状態 |
+| `game_catalog` | 提供ゲームと有効なゲーム定義バージョン |
+| `game_sessions` | 現在の状態バージョン、フェーズ、終了結果、役割別スナップショット参照 |
+| `game_actions` | 冪等なアクション履歴、検証結果、監査用メタデータ |
+| `game_snapshots` | 再接続・監査・復旧用の確定状態 |
+
+実際のテーブル定義、RLSポリシー、保持期間、インデックスは後続のDB設計書で定義する。プレイヤー別の秘匿状態は、共通の完全状態をそのまま読み出せる形で保存・配信してはならない。
+
+## 6. クライアント構成
+
+### 6.1 推奨リポジトリ構成
 
 ```text
 boardgame-platform/
 ├─ apps/
-│  ├─ mobile/                         # Expo / React Native
-│  │  ├─ app/                         # Expo Router routes
+│  ├─ client/                    # 1つのExpoアプリ: Android / iOS / Web
+│  │  ├─ app/                    # Expo Router routes
 │  │  └─ src/
-│  │     ├─ components/               # OS共通UI
-│  │     ├─ features/                 # auth/lobby/room/game等
-│  │     ├─ services/                 # API等の共通サービス
-│  │     └─ platform/                 # OS差分のAdapter
-│  │        ├─ auth/
-│  │        ├─ notification/
-│  │        ├─ payment/
-│  │        └─ storage/
-│  └─ admin/                          # 運営Web
+│  │     ├─ features/            # auth, lobby, room, game
+│  │     ├─ components/          # 共有UI、盤面Renderer
+│  │     ├─ services/            # API、Realtime、session
+│  │     └─ platform/            # *.native.ts / *.web.ts adapters
+│  └─ admin/                     # 任意: 運営専用Web。対戦クライアントとは分離
 ├─ packages/
-│  ├─ game-engine/                    # 共通ゲームエンジン
-│  ├─ game-schema/                    # Game Definitionの型・検証
-│  └─ shared/                         # 共通型・ユーティリティ
-├─ games/
-│  └─ <game-id>/                      # 各ゲーム定義・素材・テスト
+│  ├─ game-engine/               # 純粋なTypeScript
+│  ├─ game-definitions/          # ゲーム固有定義と表示メタデータ
+│  ├─ game-contracts/            # State / Action / API schema
+│  ├─ ui/                        # React Native Web互換の共有コンポーネント
+│  ├─ platform-contracts/        # Platform Adapter interface
+│  └─ config/                    # lint、TypeScript、test共通設定
 ├─ supabase/
-│  ├─ migrations/                     # DB変更履歴
-│  ├─ functions/                      # Edge Functions
-│  ├─ seed.sql                        # 開発用データ
-│  └─ config.toml                     # Local構成
-├─ tests/                              # 結合/E2E
-├─ scripts/                            # 生成・検証・simulation
-├─ docs/                               # 設計・運用文書
-├─ .github/workflows/                  # CI/CD
-├─ app.config.ts / app.json            # Expo設定
-├─ eas.json                            # Development/Preview/Production build
-└─ AGENTS.md                           # Agent向け開発規約
+│  ├─ migrations/
+│  ├─ functions/
+│  └─ seed.sql
+├─ tests/
+│  ├─ integration/
+│  └─ e2e/
+├─ docs/
+└─ .github/workflows/
 ```
 
-# 5. クロスプラットフォーム設計要件
+pnpm workspaceを基本とし、タスク実行はTurborepo等で依存関係に沿ってキャッシュできる構成を推奨する。`apps/client`をAndroid用、iOS用、Web用へ分割してゲーム画面を重複実装してはならない。
 
-本章の要件は、Android実装が先行した結果としてiOS移植が困難になることを防ぐための必須要件とする。
+### 6.2 Platform Adapter
 
-| ID | 領域 | 要件 | 優先 |
-| --- | --- | --- | --- |
-| CP-001 | 単一コードベース | Android / iOSは原則として同一React Native / Expoコードベースから生成する。 | Must |
-| CP-002 | Game Logic | ゲームルール、State、Action、勝敗判定、simulationはOS APIへ依存してはならない。 | Must |
-| CP-003 | UI | 原則として共通React Nativeコンポーネントを利用する。OS別UIは必要性が明確な場合のみ許可する。 | Must |
-| CP-004 | Platform Adapter | OS差が必要な機能はinterfaceを定義し、アプリ／ゲームロジックから実装詳細を隠蔽する。 | Must |
-| CP-005 | 依存ライブラリ | 新規ライブラリ導入時にAndroid / iOS双方のサポート状況を確認する。片OSのみの依存は原則禁止する。 | Must |
-| CP-006 | Platform file | `.android.ts(x)` / `.ios.ts(x)`はOS差が避けられない箇所に限定する。 | Must |
-| CP-007 | Build | 開発期間を通じてAndroid / iOS双方のDevelopment Buildを生成できる状態を維持する。 | Must |
-| CP-008 | CI | モバイル変更に対してAndroid / iOS双方のビルド破壊を検出できる。 | Must |
-| CP-009 | Expo環境 | Expo Goのみを前提とせず、Development BuildでNative Moduleを含む実環境を確認する。 | Must |
-| CP-010 | OSライフサイクル | foreground/background/resume、通信断、アプリ再起動からの復帰を両OSで検証する。 | Should |
-| CP-011 | Layout | Safe Area、ノッチ、画面サイズ、Dynamic Type等により主要UIが破綻しない。 | Should |
-| CP-012 | 権限 | 通知、写真等の権限要求はOS差分をAdapter内で吸収し、不要な権限を要求しない。 | Must |
+Platform Adapterは次のようなインターフェースを持ち、実装を`*.web.ts`、`*.native.ts`、必要な場合のみ`*.android.ts`／`*.ios.ts`に分ける。
 
-## 5.1 共通化の境界
+- セッション保存（ネイティブの安全な保存領域、Webの安全方針に沿った保存領域）
+- 外部URL・ディープリンク・招待URLの処理
+- 共有機能、クリップボード、通知、権限、ライフサイクル
+- Webにおけるキーボード、ポインター、可視性、オンライン状態
 
-以下は原則としてOS非依存とする。
+新しい依存関係はAndroid・iOS・Webのすべてを確認し、対応しない場合はアダプターの内側で代替実装または機能制限を明示する。ゲームエンジンと共通アプリケーション層から`window`、`document`、`navigator`、ネイティブモジュールを直接参照してはならない。
 
-- Game State
-- Game Action
-- Reducer / State transition
-- 勝敗判定
-- ターン管理
-- 山札・カード・ダイス等のルール処理
-- Supabaseとのドメインレベル通信
-- 募集・ルームのビジネスロジック
-- Schema validation
-- simulation
-- 共通UIコンポーネント
+### 6.3 Web固有の要件
 
-以下は必要に応じてPlatform Adapterを介する。
+- `web.output`は静的出力を基本とする。対局画面は認証後のクライアントアプリとして動作し、秘密情報を静的HTMLへ埋め込まない。
+- 招待・ルーム・対局のURLは直接アクセス、リロード、履歴移動で壊れない。
+- CSP、HTTPS、許可済みOrigin、リダイレクトURLを環境ごとに設定する。アクセストークン、招待トークン、秘匿状態をログ・分析基盤・URLクエリに出力しない。
+- `target="_blank"`で開く外部リンクには適切な防御を行い、Web固有のXSS対策をリリース条件に含める。
+- マウスの右クリック、テキスト選択、ズーム、ブラウザの戻る操作を前提に、ゲームの不正な二重実行や画面崩れを起こさない。
 
-- Push Notification
-- Apple / Google等の外部認証
-- In-App Purchase
-- Secure Storage
-- Deep Link / Universal Link / App Link
-- OS権限
-- Game Center / Google Play Games
-- その他Native Module
+## 7. 非機能要件
 
-## 5.2 Platform Adapter原則
-
-ゲームやFeatureからOS判定を直接行うコードの増加を防ぐ。
-
-悪い例：
-
-```ts
-if (Platform.OS === 'ios') {
-  // Feature内部でiOS固有処理
-}
-```
-
-推奨：
-
-```ts
-export interface NotificationService {
-  requestPermission(): Promise<boolean>;
-  getPushToken(): Promise<string | null>;
-}
-```
-
-OS差分は`platform/notification/`等に閉じ込める。
-
-# 6. 機能要件
-
-| ID | 機能 | 要件 | 優先 |
-| --- | --- | --- | --- |
-| FR-001 | アカウント | ユーザーが認証して継続利用できる。初期はEmail OTP等、Android/iOS双方で共通利用しやすい方式を優先する。 | Must |
-| FR-002 | プロフィール | 表示名等、対戦・募集に必要な最小プロフィールを保持できる。 | Must |
-| FR-003 | ゲーム一覧 | 公開中のゲームを一覧表示し、人数・所要時間・概要を確認できる。 | Must |
-| FR-004 | ルール表示 | 各ゲームのルール、勝利条件、操作方法をアプリ内で確認できる。 | Must |
-| FR-005 | 募集作成 | ゲーム、募集人数、開始目安、コメント等を指定して募集を投稿できる。 | Must |
-| FR-006 | 募集閲覧／参加 | 募集一覧から参加し、空き枠・状態を確認できる。 | Must |
-| FR-007 | 対戦ルーム | 2〜4人が同一ルームに入り、準備完了後にゲームを開始できる。 | Must |
-| FR-008 | オンライン対戦 | 離れた端末間でゲーム状態・操作を同期し、ゲームを最後まで完了できる。 | Must |
-| FR-009 | サーバー検証 | クライアントの操作要求をサーバー側でルール検証してから状態へ反映する。 | Must |
-| FR-010 | 再接続 | 一時的な通信断後、現在のセッション状態を再取得して復帰できる。 | Must |
-| FR-011 | ルームチャット | 対戦前後／対戦中に最低限のテキストコミュニケーションができる。 | Should |
-| FR-012 | ゲーム追加 | 共通認証・募集・ルーム機能を変更せず、Game Definition等を追加して新しいゲームを登録できる。 | Must |
-| FR-013 | ゲーム公開制御 | ゲームをDraft/Test/Published等の状態で管理できる。 | Must |
-| FR-014 | 通報 | 募集投稿・チャット・ユーザー等をアプリ内から通報できる。 | Must |
-| FR-015 | ブロック | 指定ユーザーからの交流を制限できる。 | Must |
-| FR-016 | アカウント削除 | ユーザーが自身のアカウントと関連データの削除を要求できる。 | Must |
-| FR-017 | 管理機能 | 運営者がゲーム公開状態、通報、問題ユーザー／投稿を確認・対応できる。 | Must |
-| FR-018 | プレイ履歴 | 最低限、対戦セッションの結果と状態を運用調査できる形で保持する。 | Should |
-
-# 7. ゲームプラットフォーム要件
-
-ゲーム量産性を確保するため、各ゲーム固有ロジックとプラットフォーム機能を分離する。ゲームは、共通Game Engineが解釈・実行できるGame Definitionと、必要に応じた限定的な拡張実装で表現する。
-
-Game Engine / Game DefinitionはモバイルUIおよびAndroid / iOS固有APIから独立したTypeScript層として実装する。
-
-| ID | 領域 | 要件 | 優先 |
-| --- | --- | --- | --- |
-| GR-001 | 共通状態モデル | プレイヤー、ターン、得点、公開情報、プレイヤー別非公開情報を表現できる。 | Must |
-| GR-002 | 共通コンポーネント | カード、山札、手札、ダイス、トークン、ボード／マス、カウンタ等を再利用できる。 | Must |
-| GR-003 | Actionモデル | ユーザー操作を型付きActionとして表現し、実行可能性を検証できる。 | Must |
-| GR-004 | 決定的な状態遷移 | 同一StateとActionから同一結果を得られる設計を原則とする。乱数はseed等で管理する。 | Should |
-| GR-005 | 勝敗判定 | ゲーム終了条件と勝者／順位を機械判定できる。 | Must |
-| GR-006 | 情報秘匿 | 手札等の非公開情報を他プレイヤーへ送信しない。 | Must |
-| GR-007 | バージョニング | 進行中セッションがゲーム更新で破綻しないよう`game_version`を保持する。 | Must |
-| GR-008 | Schema検証 | Game DefinitionをZod等で機械検証できる。 | Must |
-| GR-009 | 自動シミュレーション | AI／ランダムPlayerで複数回実行できるインターフェースを持つ。 | Should |
-| GR-010 | ストアポリシー考慮 | 外部から任意の実行コードを配信する方式を避け、データ駆動のゲーム定義を優先する。 | Must |
-| GR-011 | OS非依存 | Game EngineおよびGame DefinitionはAndroid / iOS固有APIを参照しない。 | Must |
-| GR-012 | Headless実行 | UIを起動せずNode.js等からルールテスト・simulationを実行できる。 | Must |
-
-## 7.1 Game Definitionの概念要件
-
-- `game_id` / `version` / 表示名 / 説明 / 対応人数 / 想定プレイ時間を定義できる。
-- 初期状態、ターン構造、Action、勝利条件を定義できる。
-- カード等のコンポーネントデータを定義できる。
-- 表示用アセットとルール文を関連付けられる。
-- 機械検証でき、不正な定義を公開できない。
-- 将来、Agentが生成しやすいよう文法・制約を狭く保つ。
-- Android / iOSで同一のGame Definitionを使用する。
-
-## 7.2 ゲーム追加の原則
-
-新しいゲームを追加する際、原則として以下を変更しない。
-
-- 認証基盤
-- 募集基盤
-- ルーム基盤
-- Supabase接続方式
-- Android固有実装
-- iOS固有実装
-
-Game Engineの能力不足により共通基盤の変更が必要な場合は、特定ゲーム専用処理を直接追加するのではなく、再利用可能な共通機能として設計する。
-
-# 8. データ要件
-
-| データ群 | 主な内容 | 備考 |
+| ID | 要件 | 優先度 |
 | --- | --- | --- |
-| users / profiles | 認証ID、表示名、状態 | 認証情報はSupabase Authを利用 |
-| games / game_versions | ゲームメタ情報、公開状態、バージョン | Game Definitionとの整合を保持 |
-| rooms / room_players | 参加者、定員、状態、ホスト | 募集と対戦開始を接続 |
-| game_sessions | ゲームID、version、現在State、進行状態 | サーバーを正とする |
-| game_actions | 誰が、いつ、どのActionを行ったか | 監査・リプレイ・不具合解析に利用可能 |
-| recruitment_posts | 募集内容、人数、状態、開始目安 | UGCとしてモデレーション対象 |
-| chat_messages | ルーム内メッセージ | UGCとしてモデレーション対象 |
-| reports / blocked_users | 通報、対応状態、ブロック関係 | 運営・安全性に必須 |
-| device_tokens | Push用端末情報 | OS種別を保持しPlatform Adapter経由で利用 |
+| NFR-01 | すべての通信をHTTPS / WSSで行う。 | Must |
+| NFR-02 | 認証・認可はSupabase AuthとRLSを基本とし、サーバー側のゲーム検証を併用する。 | Must |
+| NFR-03 | Realtimeチャンネルはルーム／セッション単位のprivate channelとし、所属ユーザーだけが購読・発信できる。 | Must |
+| NFR-04 | 競合時に状態破損・二重適用・他プレイヤー情報の漏えいを起こさない。 | Must |
+| NFR-05 | 状態遷移とアクション検証は決定的で、同じ入力から同じ結果を再現できる。 | Must |
+| NFR-06 | Web版はキーボード操作とスクリーンリーダー利用を妨げない。 | Must |
+| NFR-07 | 主要画面は320 CSS px相当の幅からデスクトップ幅まで破綻しない。 | Must |
+| NFR-08 | 監視ではクライアント種別、同期失敗、アクション拒否、再接続、エラー率を計測する。個人情報とゲームの秘匿情報は記録しない。 | Should |
 
-## 8.1 データ保持方針
+## 8. テストと受入基準
 
-- 本番ユーザーデータをGitへ保存しない。
-- 開発用seedは匿名・架空データのみとする。
-- 削除要求に対応できるよう、ユーザーIDに紐づく関連データを把握できる設計とする。
-- ゲーム進行データの保持期間はMVP運用前に決定する（未決）。
-- Android / iOSでバックエンドのデータモデルを分けない。
+### 8.1 テスト方針
 
-# 9. 非機能要件
-
-| ID | 領域 | 要件 | 優先 |
-| --- | --- | --- | --- |
-| NFR-001 | 可用性 | MVPでは商用SLAを独自保証しない。Supabase/EAS等のマネージド基盤を利用する。 | Must |
-| NFR-002 | 性能 | 通常のターン操作がユーザー操作後おおむね1秒程度以内に他端末へ反映されることを目標とする。 | Should |
-| NFR-003 | 同時実行 | MVPは小規模利用を対象とし、負荷試験により実測して上限を決める。 | Must |
-| NFR-004 | 整合性 | 同一セッションに複数の競合Actionが来ても、状態遷移順序とversionを用いて不整合を防ぐ。 | Must |
-| NFR-005 | セキュリティ | RLS、認証、サーバー側Action検証を前提とし、service role secretをクライアントへ含めない。 | Must |
-| NFR-006 | プライバシー | 必要最小限の個人情報のみ取得し、両ストアの申告内容と整合させる。 | Must |
-| NFR-007 | 保守性 | 機能・ゲーム・DB変更をGit上でレビュー可能にし、自動テストを通過させる。 | Must |
-| NFR-008 | 移植性 | Android / iOS双方を継続サポートし、片OS固有依存による再実装を防ぐ。 | Must |
-| NFR-009 | 観測性 | 主要エラー、Edge Function失敗、対戦状態の異常を調査できるログを残す。 | Should |
-| NFR-010 | アクセシビリティ | 色のみで状態を表さず、文字サイズ・タップ領域等の基本的なモバイル可用性を確保する。 | Should |
-| NFR-011 | 再現性 | 新規PCまたはAgent環境からRepoをcloneしてLocal環境を再構築できる。 | Must |
-| NFR-012 | テスト容易性 | Game LogicはUIなしでUnit Testできる。 | Must |
-
-# 10. セキュリティ・不正対策要件
-
-- クライアントは「希望するAction」を送信し、ゲーム状態の最終決定はサーバー側で行う。
-- 各API／Realtime Channelは、対象セッションへの参加権限を検証する。
-- 非公開情報は対象プレイヤーにのみ返却する。
-- DBは原則RLSを有効化し、利用者権限を明示する。
-- Secret、API key、署名鍵、OAuth Secret等はGitへコミットしない。
-- AgentにはProductionの破壊的権限を常時与えず、Local → Staging → Productionの段階を設ける。
-- Android / iOSアプリ内に管理用Secretを含めない。
-- AndroidとiOSのクライアントは同一のサーバー権限モデルを使用する。
-
-# 11. UGC・ストア公開要件
-
-募集掲示板とチャットはユーザー生成コンテンツ（UGC）に該当するため、公開時には利用規約、通報、ブロック、モデレーション、運営への連絡導線を備える。
-
-アカウント作成機能を提供する場合は、Android / iOSそれぞれのストア要件を満たす削除導線を用意する。
-
-| ID | 領域 | 要件 | 優先 |
-| --- | --- | --- | --- |
-| SR-001 | UGC利用規約 | 投稿前またはアカウント利用時に利用規約へ同意させ、不適切行為を明示的に禁止する。 | Must |
-| SR-002 | 通報 | 投稿／ユーザーをアプリ内から通報できる。 | Must |
-| SR-003 | ブロック | ユーザーをアプリ内でブロックできる。 | Must |
-| SR-004 | モデレーション | 通報を運営が確認し、投稿削除・利用制限等を実施できる。 | Must |
-| SR-005 | 不適切投稿対策 | 不適切な内容の投稿を抑止または検知する仕組みを設ける。 | Must |
-| SR-006 | 運営連絡先 | ユーザーが運営へ連絡できる導線を提供する。 | Must |
-| SR-007 | アカウント削除 | アプリ内からアカウント削除を開始できる。Google Play向けには外部Webリソースからも削除要求へ到達できるようにする。 | Must |
-| SR-008 | 外部コード配信 | 任意の実行コードをダウンロードして新機能を追加する方式を避ける。ゲーム追加はデータ定義中心とする。 | Must |
-| SR-009 | Store別確認 | Google Play / App Storeへの提出前に最新ポリシーを再確認する。 | Must |
-
-# 12. 開発環境・構成管理要件
-
-GitHubリポジトリを、アプリコード、Expo設定、Supabaseのスキーマ変更、ゲーム定義、テスト、構成文書の設計上の正本（Source of Truth）とする。
-
-| ID | 領域 | 要件 | 優先 |
-| --- | --- | --- | --- |
-| DEV-001 | Monorepo | Expo、Admin、packages、games、Supabaseを原則1リポジトリで管理する。 | Must |
-| DEV-002 | DB as Code | Supabaseのschema変更はmigrationとして保存し、Git管理する。 | Must |
-| DEV-003 | Supabase Local | clone後にSupabase local stackを起動し、migration + seedから再構築できる。 | Must |
-| DEV-004 | Expo Config as Code | `app.config.ts` / `app.json`、`eas.json`等の非Secret設定をGit管理する。 | Must |
-| DEV-005 | Secret管理 | `.env`はコミットせず、`.env.example`とSecret管理基盤を利用する。 | Must |
-| DEV-006 | 手動設定文書化 | Store、OAuth Provider等、Gitで完全管理できない設定は`docs/ops/`等に再現手順を記載する。 | Must |
-| DEV-007 | 品質コマンド | lint、typecheck、unit test、game validation、simulationを統一コマンドで実行できる。 | Must |
-| DEV-008 | CI | Pull Requestで最低限lint/typecheck/test/migration検証を自動実行する。 | Must |
-| DEV-009 | 環境分離 | Local / Staging / Productionを分離する。 | Must |
-| DEV-010 | Preview | Android / iOSの変更を本番前にDevelopment/Preview Buildで確認できる。 | Must |
-| DEV-011 | Cross-platform Build | Android / iOS双方のBuildを継続的に実施する。 | Must |
-
-## 12.1 Gitで管理するもの
-
-- React Native / Expoソースコード
-- `app.config.ts` / `app.json`
-- `eas.json`
-- TypeScript設定
-- Supabase migration
-- Supabase Edge Functions
-- Supabase local config
-- seed
-- Game Definition
-- ゲームアセット（容量・権利に応じてStorage等も利用）
-- Unit / Integration / E2E Test
-- GitHub Actions
-- AGENTS.md
-- 開発・運用ドキュメント
-
-## 12.2 Gitに含めないもの
-
-- `.env`実値
-- Supabase service role key
-- Apple / GoogleのSecret
-- Signing key / certificateの生ファイル
-- OAuth client secret
-- 本番DBデータ
-- 個人情報
-
-# 13. AIエージェント開発要件
-
-AIエージェントは「自由に本番を操作する存在」ではなく、リポジトリ内の規約・テスト・権限制御の中で作業する開発者として扱う。
-
-| ID | 領域 | 要件 | 優先 |
-| --- | --- | --- | --- |
-| AI-001 | AGENTS.md | プロジェクト概要、禁止事項、構成、テスト、完了条件をrepo rootに記載する。 | Must |
-| AI-002 | ローカル操作 | CodexがローカルGit repoを読み、ファイル編集・terminal実行・test実行できる。 | Must |
-| AI-003 | クラウド操作 | 必要に応じてCodex Cloud等がGitHubのbranch/PR単位で独立作業できる。 | Should |
-| AI-004 | 差分管理 | Agentの変更はGit diff／commit／PRとして人間がレビュー可能である。 | Must |
-| AI-005 | 自動検証 | Agentが完了前に指定されたlint/typecheck/test/game:validate等を実行する。 | Must |
-| AI-006 | Cross-platform確認 | Mobile変更時、Android/iOS双方への影響を確認し、片OS専用実装を無断で導入しない。 | Must |
-| AI-007 | Dependency確認 | Native dependency追加時はAndroid / iOS双方の対応可否を確認する。 | Must |
-| AI-008 | 本番保護 | Production DB・Store公開等の破壊的操作は原則人間承認を必要とする。 | Must |
-| AI-009 | ゲーム生成 | 将来、仕様から`games/<id>`、定義、テストを生成できるインターフェースを整備する。 | Could |
-| AI-010 | 自動バランス | 将来、simulation結果を用いてゲームパラメータを提案・調整できる。 | Could |
-
-## 13.1 AGENTS.mdに必ず含めるCross-platform Rule
-
-```md
-## Cross-platform requirements
-
-This application must support both Android and iOS from the beginning.
-
-- All new features must be designed for both Android and iOS.
-- Prefer platform-independent React Native / Expo APIs.
-- Do not introduce Android-only or iOS-only dependencies without explicit justification.
-- Keep game rules and domain logic completely platform-independent.
-- Isolate unavoidable platform-specific code behind interfaces/adapters.
-- Use `.android.ts(x)` / `.ios.ts(x)` only when necessary.
-- Verify every new native dependency supports both Android and iOS.
-- Do not assume Expo Go is the production development environment.
-- Validate changes with Development Builds when native behavior is involved.
-- Android and iOS buildability is part of Definition of Done.
-```
-
-## 13.2 推奨開発ツール構成
-
-| 用途 | 推奨 | 位置づけ |
+| 層 | 対象 | 実施内容 |
 | --- | --- | --- |
-| Agent主操作 | Codex / ChatGPTの開発Agent | 大きな実装、複数ファイル変更、テスト、並列作業 |
-| 人間の編集・確認 | VS Code | コード閲覧、デバッグ、軽微修正、Markdown設計文書 |
-| Terminal Agent | Codex CLI等 | 自動化、script実行、CIに近い検証 |
-| Remote正本 | GitHub | branch、PR、CI、履歴、レビュー |
-| Backend local | Supabase CLI + Docker | DB/Auth/Storage等のローカル再現 |
-| App development | Expo Development Build | Android / iOS双方の実機・Simulator/Emulator確認 |
-| App build | EAS Build | Development / Preview / Production build |
+| Unit | Game Engine / Game Definition | 合法手、状態遷移、勝敗、秘匿情報の投影、乱数シード、冪等性 |
+| Integration | Supabase / Edge Function / RLS | 認証、参加資格、アクション検証、競合、private Realtime、再接続 |
+| Web E2E | Chromium、WebKit | 招待、ログイン、ルーム、対局、リロード、キーボード、レスポンシブ表示 |
+| Native E2E | Android、iOS | 招待、ログイン、ルーム、対局、バックグラウンド復帰 |
+| 混在E2E | Android × iOS × Web | 同一ルームでの操作反映、離脱・復帰、終了結果の一致 |
 
-# 14. CI/CD・リリース要件
+Web E2EにはPlaywright、ネイティブE2EにはMaestro等を採用候補とする。特定ツールの採用は初期リポジトリ設計書で確定するが、少なくともブラウザ実機系とネイティブ実機／Simulator系の両方を自動検証対象とする。
 
-CI/CDでは、Androidのみ成功している状態を正常とみなさない。
+### 8.2 MVP受入基準
 
-## 14.1 Pull Request時
-
-原則として以下を実行する。
-
-```text
-Pull Request
-  ├─ install
-  ├─ lint
-  ├─ typecheck
-  ├─ unit test
-  ├─ game schema validation
-  ├─ simulation smoke test
-  ├─ Supabase migration validation
-  └─ cross-platform checks
-```
-
-Native dependency、Expo config、権限、Plugin等に影響する変更ではAndroid / iOS双方のDevelopment/Preview Buildを必須とする。
-
-## 14.2 main branch
-
-```text
-main
-  ├─ Android Development/Preview Build
-  └─ iOS Development/Preview Build
-```
-
-両OSのBuildが継続して成功する状態を維持する。
-
-## 14.3 リリース種別
-
-| 変更種別 | 検証 | リリース |
-| --- | --- | --- |
-| Game Definition / assetのみ | Schema検証、unit test、simulation、Preview | ゲーム公開フローでPublished化 |
-| Game Engine / Mobile UI | lint、typecheck、unit、E2E、Android/iOS Preview | EAS Build → Internal/TestFlight等 → Store |
-| Native dependency / Expo plugin | Android/iOS Development Build、実機確認 | EAS Build → 両OSテスト |
-| DB schema | migration reset、RLS test、型生成 | Staging適用 → 人間確認 → Production migration |
-| Edge Function | unit/integration、Staging | Staging → 人間確認 → Production deploy |
-
-# 15. テスト要件
-
-## 15.1 Unit Test
-
-- Game Engine
-- Game Rules
-- State transition
-- Action validation
-- Score / win condition
-- Game Definition validation
-- Platform Adapter interfaceを利用するFeature logic
-
-## 15.2 Integration Test
-
-- Auth
-- Room作成／参加
-- Realtime同期
-- Action送信／サーバー検証
-- Reconnect
-- RLS
-
-## 15.3 Cross-platform Test Matrix
-
-最低限、以下を確認する。
-
-| テスト | Android | iOS |
-| --- | --- | --- |
-| 起動 | 必須 | 必須 |
-| 認証 | 必須 | 必須 |
-| ゲーム一覧 | 必須 | 必須 |
-| 募集作成 | 必須 | 必須 |
-| ルーム参加 | 必須 | 必須 |
-| ゲーム開始 | 必須 | 必須 |
-| Action同期 | 必須 | 必須 |
-| 再接続 | 必須 | 必須 |
-| ゲーム完了 | 必須 | 必須 |
-| 通報／ブロック | 必須 | 必須 |
-| アカウント削除 | 必須 | 必須 |
-
-## 15.4 クロスOS対戦
-
-MVP中に少なくとも以下を検証する。
-
-```text
-Android ─┐
-         ├─ same room / same game session
-   iOS ──┘
-```
-
-AndroidユーザーとiOSユーザーが同一ルームに参加し、同じゲームセッションを最後まで完了できること。
-
-# 16. MVP受入条件
-
-| ID | 受入条件 |
+| ID | 受入基準 |
 | --- | --- |
-| AC-01 | AndroidアプリをDevelopment Buildとして起動できる。 |
-| AC-02 | iOSアプリをDevelopment BuildまたはSimulator Buildとして起動できる。 |
-| AC-03 | Android / iOS双方から同じSupabase環境へ接続できる。 |
-| AC-04 | Android端末とiOS端末／Simulatorが同じ募集・ルームへ参加できる。 |
-| AC-05 | 2〜4人のテストユーザーがインターネット越しにゲームを最後まで完了できる。 |
-| AC-06 | Android / iOS混在で1ゲームを最後まで完了できる。 |
-| AC-07 | 無効なActionを送信してもサーバーが拒否し、不正なStateへ遷移しない。 |
-| AC-08 | 一時切断またはアプリ再起動後、現在Stateを取得して対戦に復帰できる。 |
-| AC-09 | 最低2種類のゲームが同じ認証・募集・ルーム・Game Engine基盤上で動作する。 |
-| AC-10 | Game Engine / Game LogicにAndroid / iOS固有APIへの依存がない。 |
-| AC-11 | 新規Native dependencyはAndroid/iOS双方の対応が確認されている。 |
-| AC-12 | 通報とブロックのユーザーフローが利用でき、運営側で通報を確認できる。 |
-| AC-13 | 新しい開発環境でcloneし、手順に従ってローカルSupabaseとアプリを起動できる。 |
-| AC-14 | Pull Requestで自動テストが実行され、失敗時はmergeしない運用ができる。 |
-| AC-15 | main branchでAndroid / iOS双方のBuildが継続的に成功する。 |
-| AC-16 | CodexがAGENTS.mdを参照し、1つの機能変更を実装→テスト→差分提示まで完了できる。 |
-| AC-17 | Google Play / App Store公開に必要なプライバシー、アカウント削除、UGC安全対策の準備ができている。 |
+| AC-01 | Androidアプリ、iOSアプリ、ChromeまたはSafariの各クライアントから同一ユーザーがログインできる。 |
+| AC-02 | Android・iOS・Webの3人が同一ルームへ参加し、同一のゲーム状態を見ながら最後まで対戦できる。 |
+| AC-03 | Web招待URLを新しいブラウザセッションで開き、認証後に正しいルームへ参加できる。 |
+| AC-04 | 無効な手番、古い状態バージョン、重複した`action_id`、非参加者のアクションがサーバーで拒否される。 |
+| AC-05 | いずれかのクライアントを一時的に切断またはバックグラウンド化し、復帰後に確定状態へ同期できる。 |
+| AC-06 | Webでタップ／クリックだけで全ての必須操作ができ、キーボードだけでも主要な操作ができる。 |
+| AC-07 | Web出力、Androidビルド、iOSビルド、lint、typecheck、ゲームエンジンのテストがCIで成功する。 |
+| AC-08 | RLSとprivate Realtimeにより、非参加者が別ルームの状態・通知・秘匿情報を取得できない。 |
 
-# 17. 開発フェーズ
+## 9. CI/CDとリリース
 
-| Phase | 目的 | 主な成果物 |
-| --- | --- | --- |
-| 0. Foundation | AgentとAndroid/iOS双方が扱えるrepoを作る | Monorepo、AGENTS.md、Expo、Development Build、Supabase local、CI、環境変数設計 |
-| 1. Cross-platform Skeleton | Android/iOS共通アプリの骨格を確認する | Expo Router、共通UI、Platform Adapter、Android/iOS Build |
-| 2. Core Online | オンライン対戦の縦切りMVP | Auth、Room、Realtime、Server validation、単純ゲーム1本 |
-| 3. Cross-OS Validation | 移植不要な構成を実証する | Android↔iOS混在対戦、Reconnect、Lifecycle確認 |
-| 4. Platformization | ゲーム追加性を証明する | Game Engine、Game Schema、2本目、game_version、simulation |
-| 5. Community | 一般公開に必要な交流・安全性 | 募集掲示板、チャット、通報、ブロック、Admin、削除導線 |
-| 6. Store Release | 実ユーザーへ公開 | Android/iOS Production build、Store設定、監視、運用手順 |
-| 7. AI Game Factory | ゲーム生成を効率化 | Agent生成script、Game Definition生成、自動simulation、PR化 |
-
-## 17.1 Phase 0で最初に確認すること
-
-ゲーム機能を大量実装する前に、以下を通す。
+### 9.1 Pull Request
 
 ```text
-Git clone
-   ↓
 install
-   ↓
-Supabase local start
-   ↓
-Android Development Build
-   ↓
-iOS Development/Simulator Build
-   ↓
-同じBackendへ接続
-   ↓
-CI成功
+├─ lint / typecheck
+├─ game-engine unit test / simulation
+├─ schema validation
+├─ Supabase migration + RLS integration test
+├─ expo export --platform web
+├─ Web E2E
+└─ cross-platform dependency check
 ```
 
-これにより、開発初期にiOS側のビルド不能要因を発見する。
+UI、Expo設定、Native dependency、Platform Adapterの変更がある場合は、PRまたはmainでAndroid・iOSのDevelopment / Preview Buildを実行する。WebはPRごとにプレビューURLを作成し、招待・対局の基本フローを確認可能にする。
 
-# 18. 未決事項（実装前またはMVP中に決める）
+### 9.2 環境分離
 
-| ID | 論点 | 決定タイミング／備考 |
+| 環境 | 用途 | Web | Native |
+| --- | --- | --- | --- |
+| Local | 開発・自動テスト | localhostのWeb export／開発サーバー | Development Build |
+| Staging | 結合・混在E2E | 認証リダイレクトを登録したプレビュー環境 | Preview Build |
+| Production | 一般公開 | 独自ドメインの静的配信 | Store配布ビルド |
+
+Local / Staging / ProductionでSupabaseプロジェクト、認証リダイレクトURL、Web Origin、秘密情報を分離する。匿名キーを含むクライアント設定と、サーバー専用キーを混在させない。
+
+## 10. 実装フェーズ
+
+| Phase | 目的 | 完了条件 |
 | --- | --- | --- |
-| O-01 | サービス名／ブランド | Store公開までに決定 |
-| O-02 | 認証方式 | Email OTP / Google / Apple等から決定。両OSのStore要件を確認する |
-| O-03 | 匿名利用 | ログイン必須とするか、一部ゲスト利用を許可するか |
-| O-04 | ルームチャット範囲 | 対戦中も自由入力可か、定型文のみか |
-| O-05 | Game DSLの表現力 | 完全データ駆動と限定Plugin APIの境界 |
-| O-06 | ゲーム素材生成 | 生成AI画像を使用する場合のモデル・権利・表示ポリシー |
-| O-07 | 保持期間 | game_actions、chat、report等の保持・削除期間 |
-| O-08 | 年齢層 | 未成年を対象とするか。UGCモデレーション／ストア申告に影響 |
-| O-09 | 収益化 | 無料、広告、課金、サブスク等。MVPでは対象外 |
-| O-10 | Store公開順序 | Android / iOSを同時公開するか、公開時期をずらすか |
-| O-11 | Push通知 | MVPに含めるか。含める場合はPlatform Adapterで実装 |
-| O-12 | E2E環境 | Maestro等の候補からAndroid/iOS双方を扱える方式を選定 |
+| 0. Foundation | Universal Clientと環境を成立させる | Android/iOS Development Build、Web export、Supabase Local、共通認証画面が動く。 |
+| 1. Vertical Slice | 極小ゲームで3クライアント対戦を通す | 招待、ルーム、サーバー検証、同期、結果表示をAndroid × iOS × Webで完走する。 |
+| 2. Reliability | 復帰・権限・秘匿性を固める | 再接続、競合、RLS、private Realtime、監査ログを検証する。 |
+| 3. Game Platform | 2本目のゲームを追加する | 共通エンジン・定義だけでゲームを追加し、クライアント固有実装を増やさない。 |
+| 4. Release | 公開運用に備える | Web本番配信、Storeビルド、監視、削除導線、運用手順を整備する。 |
 
-# 19. Definition of Done
+最初に作るゲームは、ターン制で情報秘匿が少なく、操作数の少ないものを選ぶ。ゲームを作り込む前に、Android・iOS・Webの混在ルームで縦の経路を通すことを最優先とする。
 
-すべての変更について、以下を満たすことを完了条件とする。
+## 11. Definition of Done
 
-- 要求に対応するコード／migration／ゲーム定義がGit差分として存在する。
-- lintが成功する。
-- typecheckが成功する。
-- 該当Unit Testが追加され、成功する。
-- DB変更がある場合、ローカルでmigrationをゼロから適用できる。
-- Game変更がある場合、schema validationとsimulationが成功する。
-- UI変更がある場合、Development/Preview Buildで主要フローを確認する。
-- Android / iOS双方への影響を確認する。
-- 新しいNative dependencyを導入した場合、Android / iOS双方の対応を確認する。
-- OS固有コードを追加した場合、その必要性と共通interfaceが明確である。
-- Secretや本番データがcommitに含まれていない。
-- 必要な`docs/`および`AGENTS.md`が更新されている。
+機能変更は、以下をすべて満たして完了とする。
 
-Mobile Appの変更では、さらに以下を完了条件とする。
+- 共通層にWeb専用またはOS専用の依存が漏れていない。
+- Game Engineのテスト、lint、typecheck、schema validationが成功している。
+- サーバー状態を直接更新する経路や、検証を回避できるRLSポリシーがない。
+- Web export、Android、iOSへの影響を確認している。
+- UI変更ではモバイル幅・デスクトップ幅、タッチ・クリック、キーボード操作を確認している。
+- ルームやゲーム同期に関わる変更では、少なくとも1つの混在対戦テストを追加または実行している。
+- 新しいNative／Web依存は3プラットフォームの対応状況、ライセンス、サイズ、セキュリティを確認している。
+- 秘密情報、アクセストークン、招待トークン、秘匿ゲーム状態をログ・コミット・エラー通知へ含めていない。
+- 必要な設計資料、環境変数の説明、テスト手順を更新している。
 
-- Android Buildが成功する。
-- iOS Buildが成功する。
-- Game LogicへOS固有依存を持ち込んでいない。
-- 主要なOS差分がPlatform Adapterの外に漏れていない。
+## 12. 後続の設計資料
 
-# 20. 外部制約・公式資料
+本書の次に、以下を作成する。
 
-以下の公式資料は、2026-08-23時点で本要件に影響するものとして参照する。サービス仕様・ストアポリシーは変更され得るため、本番公開時に最新版を再確認する。
+1. システム基本設計書：API境界、Realtime通知、認証、環境構成、責務分割
+2. DB・RLS設計書：ER図、状態投影、アクションの冪等性、保持期間、監査方針
+3. Game Engine / Game Definition仕様書：状態、Action、Reducer、乱数、秘匿情報、バージョニング
+4. Universal UI設計書：ルーティング、レスポンシブ盤面、入力・アクセシビリティ、Web固有UI
+5. 初期リポジトリ設計書：workspace、Expo設定、EAS、Web配信、CI、テストコマンド
 
-| 提供元 | 資料名 | 本書への影響 |
-| --- | --- | --- |
-| Expo | EAS Build | Android / iOS双方のクラウドBuild、Development/Preview/Production Build |
-| Expo | Development builds | Expo Goだけに依存しないNative Moduleを含む開発環境 |
-| Expo | Platform-specific extensions and module | `.android.tsx` / `.ios.tsx`等のOS別実装方法 |
-| Supabase | Local development workflow | migration、seed、local環境をversion controlで再現 |
-| Supabase | Managing Environments | Local / Staging / Productionの分離 |
-| Apple | App Review Guidelines | UGC、アカウント、外部コード配信等の審査要件 |
-| Apple | Offering account deletion in your app | アカウント作成対応アプリの削除導線 |
-| Google Play | User-generated content policy | UGCの利用規約、通報、ブロック、モデレーション |
-| Google Play | User Data / Account Deletion Requirement | アプリ内および外部Webでのアカウント削除要求 |
+## 13. 参照方針
 
-# 21. 本書から次に作る設計資料
+技術選定の前提は、Expo RouterがAndroid・iOS・Webで同じルーティングを扱い、ExpoがWebの静的出力をサポートすることである。また、Supabase Realtimeはprivate channelとRLSによる認可を前提に利用する。SDK、ブラウザ対応、ストアポリシー、認証プロバイダーの要件は変わり得るため、実装開始時および本番公開前に公式資料の最新版を再確認する。
 
-1. **システム基本設計書**
-   - Client / Backend / Game Engine / Platform Adapterの責務分割
-   - 通信方式
-   - Local / Staging / Production構成
-   - Android / iOS Build構成
-
-2. **初期リポジトリ設計**
-   - Monorepo workspace
-   - Expo Router
-   - Supabase local
-   - EAS設定
-   - GitHub Actions
-
-3. **AGENTS.md**
-   - Cross-platform rules
-   - Architecture rules
-   - Test commands
-   - Dependency rules
-   - Definition of Done
-   - Production操作制限
-
-4. **Game Engine / Game Definition仕様書**
-   - State
-   - Action
-   - Reducer
-   - Schema
-   - versioning
-   - 情報秘匿
-   - simulation
-
-5. **DB設計書**
-   - ER図
-   - テーブル
-   - RLS
-   - index
-   - 保持期間
-
-6. **API / Realtime設計書**
-   - Action送信
-   - 状態同期
-   - 再接続
-   - 競合制御
-
-7. **Cross-platform Test Plan**
-   - Android
-   - iOS
-   - Android↔iOS混在対戦
-   - Lifecycle
-   - Permission
-   - Deep Link / Push等の将来差分
-
----
-
-## 推奨する次の作業
-
-最初にPhase 0〜1を実装し、**ゲーム本体を作り込む前にAndroid / iOS双方のDevelopment Buildが通ることを確認する**。
-
-その後、High Card程度の極小ゲームを利用して、以下を縦に接続する。
-
-```text
-Android / iOS App
-       ↓
-Auth
-       ↓
-Room
-       ↓
-Realtime
-       ↓
-Server-side Action Validation
-       ↓
-Game Engine
-       ↓
-Game Complete
-```
-
-この1本目をAndroid / iOS混在で完走できた時点で、Game Engine / Game Definitionを抽象化し、2本目のゲームを追加する。
-
-この順序により、ゲーム実装が増えた後でクロスプラットフォーム設計をやり直すリスクを抑える。
+- [Expo Router: Universal React Native applications](https://docs.expo.dev/router/introduction/)
+- [Expo: Develop websites with Expo](https://docs.expo.dev/workflow/web/)
+- [Expo: Publish your web app](https://docs.expo.dev/deploy/web/)
+- [Supabase: Realtime Authorization](https://supabase.com/docs/guides/realtime/authorization)
+- [Supabase: Subscribing to Database Changes](https://supabase.com/docs/guides/realtime/subscribing-to-database-changes)
