@@ -1,0 +1,24 @@
+{
+  "name": "online-boardgame-platform",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "web": "npm run web --workspace=@boardgame/client",
+    "export:web": "npm run export:web --workspace=@boardgame/client",
+    "test": "npm run test --workspace=@boardgame/game-engine",
+    "typecheck": "npm run typecheck --workspace=@boardgame/client && npm run typecheck --workspace=@boardgame/game-engine",
+    "supabase": "supabase"
+  },
+  "devDependencies": {
+    "supabase": "^2.57.0",
+    "vite": "6.3.5",
+    "vitest": "3.2.4"
+  },
+  "engines": {
+    "node": ">=20.19.4"
+  }
+}
